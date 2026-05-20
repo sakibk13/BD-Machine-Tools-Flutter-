@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart' as dio_client;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../models/order.dart';
 import '../models/customer.dart';
@@ -14,10 +15,60 @@ class ApiService {
   static String get consumerKey => dotenv.env['WOO_CONSUMER_KEY'] ?? '';
   static String get consumerSecret => dotenv.env['WOO_CONSUMER_SECRET'] ?? '';
 
-  Map<String, String> get _headers => {
-    'Authorization': 'Basic ${base64Encode(utf8.encode('$consumerKey:$consumerSecret'))}',
-    'Content-Type': 'application/json',
-  };
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    try {
+      // With Application Passwords, we verify by calling /users/me with Basic Auth
+      final authString = base64Encode(utf8.encode('$username:$password'));
+      
+      final response = await http.get(
+        Uri.parse("${wpBaseUrl}users/me"),
+        headers: {
+          'Authorization': 'Basic $authString',
+        },
+      );
+
+      final body = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('app_username', username);
+        await prefs.setString('app_password', password);
+        await prefs.setString('user_display_name', body['name'] ?? username);
+        await prefs.setString('user_email', body['email'] ?? '');
+        
+        return {"success": true, "data": {
+          "user_display_name": body['name'] ?? username
+        }};
+      } else {
+        return {
+          "success": false,
+          "message": body['message'] ?? "Invalid username or application password"
+        };
+      }
+    } catch (e) {
+      return {"success": false, "message": "Connection error: $e"};
+    }
+  }
+
+  Future<Map<String, String>> get _headers async {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('app_username');
+    final password = prefs.getString('app_password');
+
+    String auth;
+    if (username != null && password != null) {
+      // Use logged in user credentials
+      auth = base64Encode(utf8.encode('$username:$password'));
+    } else {
+      // Fallback to WooCommerce API keys
+      auth = base64Encode(utf8.encode('$consumerKey:$consumerSecret'));
+    }
+
+    return {
+      'Authorization': 'Basic $auth',
+      'Content-Type': 'application/json',
+    };
+  }
 
   // Helper for Multipart/Media Uploads
   final dio_client.Dio _dio = dio_client.Dio();
@@ -29,13 +80,12 @@ class ApiService {
         "file": await dio_client.MultipartFile.fromFile(imageFile.path, filename: fileName),
       });
 
+      final headers = await _headers;
       final response = await _dio.post(
         "${wpBaseUrl}media",
         data: formData,
         options: dio_client.Options(
-          headers: {
-            'Authorization': 'Basic ${base64Encode(utf8.encode('$consumerKey:$consumerSecret'))}',
-          },
+          headers: headers,
         ),
       );
 
@@ -55,7 +105,8 @@ class ApiService {
       if (categoryId != null && categoryId > 0) {
         url += "&category=$categoryId";
       }
-      final response = await http.get(Uri.parse(url), headers: _headers);
+      final headers = await _headers;
+      final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
         return data.map((json) => Product.fromJson(json)).toList();
@@ -68,7 +119,8 @@ class ApiService {
 
   Future<List<Order>> getOrders() async {
     try {
-      final response = await http.get(Uri.parse("${baseUrl}orders"), headers: _headers);
+      final headers = await _headers;
+      final response = await http.get(Uri.parse("${baseUrl}orders"), headers: headers);
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
         return data.map((json) => Order.fromJson(json)).toList();
@@ -81,7 +133,8 @@ class ApiService {
 
   Future<List<Customer>> getCustomers() async {
     try {
-      final response = await http.get(Uri.parse("${baseUrl}customers"), headers: _headers);
+      final headers = await _headers;
+      final response = await http.get(Uri.parse("${baseUrl}customers"), headers: headers);
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
         return data.map((json) => Customer.fromJson(json)).toList();
@@ -94,9 +147,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> createProduct(Map<String, dynamic> data) async {
     try {
+      final headers = await _headers;
       final response = await http.post(
         Uri.parse("${baseUrl}products"),
-        headers: _headers,
+        headers: headers,
         body: json.encode(data),
       );
       
@@ -116,9 +170,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> createCategory(Map<String, dynamic> data) async {
     try {
+      final headers = await _headers;
       final response = await http.post(
         Uri.parse("${baseUrl}products/categories"),
-        headers: _headers,
+        headers: headers,
         body: json.encode(data),
       );
       final body = json.decode(response.body);
@@ -134,9 +189,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateProduct(int id, Map<String, dynamic> data) async {
     try {
+      final headers = await _headers;
       final response = await http.put(
         Uri.parse("${baseUrl}products/$id"),
-        headers: _headers,
+        headers: headers,
         body: json.encode(data),
       );
       final body = json.decode(response.body);
@@ -152,9 +208,10 @@ class ApiService {
 
   Future<bool> deleteProduct(int id) async {
     try {
+      final headers = await _headers;
       final response = await http.delete(
         Uri.parse("${baseUrl}products/$id?force=true"),
-        headers: _headers,
+        headers: headers,
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -164,7 +221,8 @@ class ApiService {
 
   Future<List<Map<String, dynamic>>> getCategories() async {
     try {
-      final response = await http.get(Uri.parse("${baseUrl}products/categories?per_page=100"), headers: _headers);
+      final headers = await _headers;
+      final response = await http.get(Uri.parse("${baseUrl}products/categories?per_page=100"), headers: headers);
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
         return data.map((json) => {
@@ -181,9 +239,10 @@ class ApiService {
 
   Future<bool> updateOrderStatus(int id, String status) async {
     try {
+      final headers = await _headers;
       final response = await http.put(
         Uri.parse("${baseUrl}orders/$id"),
-        headers: _headers,
+        headers: headers,
         body: json.encode({"status": status}),
       );
       return response.statusCode == 200;
@@ -193,7 +252,8 @@ class ApiService {
   }
   Future<Map<String, dynamic>> getReport() async {
     try {
-      final response = await http.get(Uri.parse("${baseUrl}reports/sales?period=last_7days"), headers: _headers);
+      final headers = await _headers;
+      final response = await http.get(Uri.parse("${baseUrl}reports/sales?period=last_7days"), headers: headers);
       if (response.statusCode == 200) {
         return (json.decode(response.body) as List).first;
       }

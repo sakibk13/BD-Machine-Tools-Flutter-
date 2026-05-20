@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 import '../services/feedback_service.dart';
+import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -53,20 +54,26 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 1));
-      
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
+      final result = await ApiService().login(
+        _userController.text.trim(),
+        _passController.text.trim(),
+      );
       
       if (!mounted) return;
       setState(() => _isLoading = false);
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
-      FeedbackService.show(context, "✅ Access Granted: Welcome back, Admin!");
+
+      if (result['success']) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true);
+        
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+        FeedbackService.show(context, "✅ Access Granted: Welcome back, ${result['data']['user_display_name']}!");
+      } else {
+        FeedbackService.show(context, "❌ Login Failed: ${result['message']}", isError: true);
+      }
     } else {
        FeedbackService.show(context, "❌ Error: Please fill all fields.", isError: true);
     }

@@ -36,6 +36,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   void _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('isLoggedIn');
+    await prefs.remove('app_username');
+    await prefs.remove('app_password');
+    await prefs.remove('user_email');
+    await prefs.remove('user_display_name');
+    
     if (!mounted) return;
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
   }
