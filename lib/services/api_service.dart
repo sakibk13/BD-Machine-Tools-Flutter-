@@ -92,42 +92,61 @@ class ApiService {
     }
   }
 
-  Future<bool> createProduct(Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> createProduct(Map<String, dynamic> data) async {
     try {
       final response = await http.post(
         Uri.parse("${baseUrl}products"),
         headers: _headers,
         body: json.encode(data),
       );
-      return response.statusCode == 201;
+      
+      final body = json.decode(response.body);
+      if (response.statusCode == 201) {
+        return {"success": true, "message": "Product created successfully!"};
+      } else {
+        return {
+          "success": false, 
+          "message": body['message'] ?? "Could not create product. Error: ${response.statusCode}"
+        };
+      }
     } catch (e) {
-      return false;
+      return {"success": false, "message": "Connection error: $e"};
     }
   }
 
-  Future<bool> createCategory(Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> createCategory(Map<String, dynamic> data) async {
     try {
       final response = await http.post(
         Uri.parse("${baseUrl}products/categories"),
         headers: _headers,
         body: json.encode(data),
       );
-      return response.statusCode == 201;
+      final body = json.decode(response.body);
+      if (response.statusCode == 201) {
+        return {"success": true, "message": "Category created!"};
+      } else {
+        return {"success": false, "message": body['message'] ?? "Error ${response.statusCode}"};
+      }
     } catch (e) {
-      return false;
+      return {"success": false, "message": "Connection error"};
     }
   }
 
-  Future<bool> updateProduct(int id, Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> updateProduct(int id, Map<String, dynamic> data) async {
     try {
       final response = await http.put(
         Uri.parse("${baseUrl}products/$id"),
         headers: _headers,
         body: json.encode(data),
       );
-      return response.statusCode == 200;
+      final body = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return {"success": true, "message": "Updated successfully!"};
+      } else {
+        return {"success": false, "message": body['message'] ?? "Error ${response.statusCode}"};
+      }
     } catch (e) {
-      return false;
+      return {"success": false, "message": "Connection error"};
     }
   }
 

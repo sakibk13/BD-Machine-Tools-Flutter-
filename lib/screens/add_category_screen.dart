@@ -44,17 +44,17 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       "parent": _parentCategoryId ?? 0,
     };
 
-    final success = await ApiService().createCategory(categoryData);
+    final result = await ApiService().createCategory(categoryData);
 
     setState(() => _isLoading = false);
 
     if (!mounted) return;
 
-    if (success) {
-      FeedbackService.show(context, "✅ Category '${_nameController.text}' Created!");
+    if (result['success']) {
+      FeedbackService.show(context, result['message']);
       Navigator.pop(context, true);
     } else {
-      FeedbackService.show(context, "❌ Error creating category.", isError: true);
+      FeedbackService.show(context, result['message'], isError: true);
     }
   }
 

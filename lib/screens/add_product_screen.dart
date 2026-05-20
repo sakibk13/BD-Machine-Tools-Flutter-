@@ -93,17 +93,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ]
     };
 
-    final success = await ApiService().createProduct(productData);
+    final result = await ApiService().createProduct(productData);
 
     setState(() => _isLoading = false);
 
     if (!mounted) return;
 
-    if (success) {
-      FeedbackService.show(context, "Machine successfully uploaded to website!");
+    if (result['success']) {
+      FeedbackService.show(context, result['message']);
       Navigator.pop(context, true);
     } else {
-      FeedbackService.show(context, "Could not upload machine. Check your connection.", isError: true);
+      FeedbackService.show(context, result['message'], isError: true);
     }
   }
 

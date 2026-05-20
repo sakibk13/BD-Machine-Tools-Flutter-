@@ -1,0 +1,202 @@
+# BD Machine Tools - Mobile Admin App Specification (Detailed for React Native)
+
+## 1. System Architecture & API Integration
+The application acts as a mobile remote control for a WooCommerce/WordPress backend.
+
+*   **Base URLs:**
+    *   WooCommerce REST API v3: `https://bdmachinetools.com/wp-json/wc/v3/`
+    *   WordPress API v2 (for Media): `https://bdmachinetools.com/wp-json/wp/v2/`
+*   **Authentication Mechanism:**
+    *   Uses **Basic Authentication**.
+    *   Credentials: `WOO_CONSUMER_KEY` and `WOO_CONSUMER_SECRET` must be read from an `.env` file or secure storage.
+    *   Header requirement: `'Authorization': 'Basic ' + base64Encode('key:secret')`
+*   **State Management / Navigation:**
+    *   The app uses a persistent bottom navigation bar or tab system to switch between Home/Dashboard, Products, Orders, and Customers.
+
+---
+
+## 2. Authentication Flow (Login & Init)
+### **Initialization**
+*   **Action:** Check local storage (e.g., `AsyncStorage` in React Native) for an `isLoggedIn` boolean flag upon app launch.
+*   **Routing:** If true -> route to Main Dashboard Tabs. If false -> route to Login Screen.
+
+### **Login Screen**
+*   **UI Components:** Username/Email input, Password input, Login Button.
+*   **Behavior:**
+    *   Authenticates credentials (implementation details depend on how WP auth is configured, usually via JWT or validating the keys).
+    *   On success: Set `isLoggedIn = true` in persistent storage and navigate to Dashboard.
+
+---
+
+## 3. Screen 1: Dashboard (Command Center)
+**Purpose:** The central hub providing a high-level overview of business metrics and quick action links.
+
+**Data Requirements (Incoming):**
+*   **Endpoint:** `GET /reports/sales?period=last_7days`
+*   **Data mapped to UI:** `total_sales`, `total_orders`, `total_items`.
+
+**UI/UX Components:**
+1.  **Header Section (Dark Gradient Theme):**
+    *   Title: "Command Center" / Subtitle: "Live Business Overview".
+    *   **Buttons (Top Right):**
+        *   Globe Icon: Opens `https://bdmachinetools.com` in the device's external web browser.
+        *   Power Icon: Clears `isLoggedIn` flag from storage and routes back to the Login Screen.
+2.  **Revenue Card:**
+    *   Displays large formatted text of `total_sales` with the currency symbol (৳).
+3.  **Mini Stats Row:**
+    *   Card 1: "New Orders" displaying `total_orders`.
+    *   Card 2: "Active Items" displaying `total_items`.
+4.  **Operations Hub (Quick Actions List):**
+    *   "Add New Machine" -> Navigates to **Add Product Screen**.
+    *   "Category Manager" -> Navigates to **Add Category Screen**.
+    *   "Website Info" -> Navigates to **Site Settings Screen**.
+    *   "Client Database" -> Switches tab focus to the **Customer Screen**.
+
+---
+
+## 4. Screen 2: Machine Inventory (Product List)
+**Purpose:** Browsing, searching, and filtering all machines currently on the website.
+
+**Data Requirements (Incoming):**
+*   **Endpoints:**
+    *   `GET /products/categories?per_page=100` (Loads horizontal filter chips).
+    *   `GET /products?per_page=50` (Loads grid, appends `&category={id}` if filtered).
+
+**UI/UX Components:**
+1.  **Search & Filter Bar (Sticky Top):**
+    *   **Text Input:** Client-side search filtering the fetched list by `product.name` or `product.sku`.
+    *   **Scanner Icon:** Opens the device camera. If a QR/Barcode is read, the result populates the search bar and triggers the filter.
+    *   **Category Chips (Horizontal Scroll):** A list of category names. "All Machines" is default. Tapping a chip re-fetches products for that specific category ID.
+2.  **Product Grid:**
+    *   2-column grid layout.
+    *   Cards show: Machine image, name, price, stock status.
+    *   **Action:** Tapping a card navigates to the **Edit Machine (Product Detail) Screen**, passing the full product object. Pull-to-refresh is required.
+
+---
+
+## 5. Screen 6: Edit Machine (Product Detail)
+**Purpose:** Updating pricing, stock, or deleting an existing machine from the live site.
+
+**Data Requirements (Incoming):**
+*   Receives the `Product` object via navigation props from the Product List.
+
+**UI/UX Components:**
+1.  **Header:** Large product image at the top.
+    *   **App Bar Actions:**
+        *   *Share Icon:* Uses native sharing API to send a formatted string: `"Check out this machine... [Name, SKU, Price] Visit: https://bdmachinetools.com/?p=[ID]"`.
+        *   *Delete Icon:* Opens a warning modal ("Permanently Delete?"). If confirmed, calls `DELETE /products/{id}?force=true`. On success, pops screen.
+2.  **Form Fields (Pre-filled):**
+    *   Machine Name (`name`)
+    *   SKU/Model Number (`sku`)
+    *   Regular Price (`regular_price`)
+    *   Offer/Sale Price (`sale_price`)
+    *   Stock Quantity (`stock_quantity`)
+    *   Stock Status Dropdown: "In Stock" (`instock`) vs "Out of Stock" (`outofstock`).
+    *   Description (`description` - multiline).
+3.  **Publish Button:**
+    *   **Action:** Validates form -> Shows loading state -> Calls `PUT /products/{id}` with the modified fields payload -> Shows success toast -> Navigates back.
+
+---
+
+## 6. Screen 4: New Machine Entry (Add Product)
+**Purpose:** Uploading a brand new machine to the website.
+
+**Data Requirements (Incoming/Outgoing):**
+*   **Incoming:** Needs categories `GET /products/categories` for the dropdown.
+*   **Outgoing (Media):** `POST /wp/v2/media` (multipart/form-data with the image file). Returns `source_url`.
+*   **Outgoing (Product):** `POST /products` (JSON payload).
+
+**UI/UX Components:**
+1.  **Image Picker:**
+    *   Large touchable area. Opens native gallery picker. Displays selected image preview.
+2.  **Form Fields:**
+    *   Machine Name (`name`).
+    *   SKU (`sku`) -> Includes a camera icon to open the QR scanner and auto-fill this field.
+    *   Regular Price & Offer Price (numeric keyboards).
+    *   Stock Quantity (numeric).
+    *   Category Dropdown (maps to category ID).
+    *   Description (multiline).
+3.  **Submit Button Flow:**
+    *   Validate form -> Show loader.
+    *   *Step 1:* If image exists, POST to media endpoint. Get image URL.
+    *   *Step 2:* POST to `/products` with payload containing: `name`, `type: "simple"`, `prices`, `sku`, `manage_stock: true`, `stock_quantity`, `description`, `categories: [{id}]`, `images: [{src: url}]`, and automatically sets a WooCommerce Attribute for `Model`.
+    *   Show toast -> Navigate back.
+
+---
+
+## 7. Screen 5: Order Management
+**Purpose:** Viewing and processing incoming client orders.
+
+**Data Requirements:**
+*   **Incoming:** `GET /orders`
+*   **Outgoing:** `PUT /orders/{id}` (to update status).
+
+**UI/UX Components:**
+1.  **List View:**
+    *   Displays a list of expandable cards. Pull-to-refresh required.
+2.  **Order Card (Collapsed):**
+    *   Shows: Order ID, Customer Name, Total Amount (৳), and Status Badge (colored based on status: Green/Completed, Red/Cancelled, Orange/Pending).
+3.  **Order Card (Expanded):**
+    *   Shows itemized list: Line items with name, quantity, and line total.
+    *   **Update Status Footer:** A dropdown containing ["Pending", "Processing", "Completed", "Cancelled"].
+    *   **Action:** Changing the dropdown immediately triggers `PUT /orders/{id}` sending `{"status": "new_status"}`. Shows loading indicator during API call.
+
+---
+
+## 8. Screen 6: Client Database (Customers)
+**Purpose:** Viewing registered users and their lifetime value.
+
+**Data Requirements:**
+*   **Incoming:** `GET /customers`
+
+**UI/UX Components:**
+1.  **List View:**
+    *   Displays a list of customer cards.
+2.  **Customer Card:**
+    *   **Avatar:** Circle with the first letter of their first name.
+    *   **Info:** First Name + Last Name, Email address.
+    *   **Metrics (Right Aligned):** Total amount spent (`total_spent` formatted with ৳) and total number of orders (`orders_count`).
+
+---
+
+## 9. Screen 7: Add Category (Admin Feature)
+**Purpose:** Creating new product classifications.
+
+**Data Requirements:**
+*   **Incoming:** `GET /products/categories` (to populate the "Parent" dropdown).
+*   **Outgoing:** `POST /products/categories`
+
+**UI/UX Components:**
+1.  **Form Fields:**
+    *   Category Name.
+    *   Parent Category Dropdown (Allows selecting an existing category ID to make the new one a sub-category, or "None" for root level).
+    *   Description.
+2.  **Submit Button:**
+    *   Sends JSON payload `{"name": str, "description": str, "parent": int}`. Shows success toast and pops screen.
+
+---
+
+## 10. Screen 8: Website Settings
+**Purpose:** Updating global site metadata.
+
+**Note on implementation:** This is a UI mock in the Flutter version. For React Native, it requires a custom WP endpoint or Options API integration.
+
+**UI/UX Components:**
+1.  **Form Fields:**
+    *   Copyright Text (Footer)
+    *   Physical Address
+    *   Support Hotline
+    *   Business Email
+2.  **Update Button:**
+    *   Triggers API call to update the site's global configuration.
+
+---
+
+## 11. Screen 9: Full Web Admin (WebView)
+**Purpose:** Accessing the full WordPress backend without leaving the app.
+
+**UI/UX Components:**
+1.  **WebView Widget:**
+    *   Loads `https://bdmachinetools.com/wp-admin/`.
+    *   Requires a loading spinner overlay until the page finish event.
+    *   Requires JavaScript enabled.

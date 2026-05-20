@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
@@ -23,6 +25,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   late TextEditingController _descriptionController;
   late String _stockStatus;
   bool _isLoading = false;
+  File? _imageFile;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -36,11 +40,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     _stockStatus = widget.product.stockStatus;
   }
 
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _imageFile = File(image.path);
+      });
+    }
+  }
+
   Future<void> _update() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     
-    final success = await ApiService().updateProduct(widget.product.id, {
+    String? imageUrl;
+    if (_imageFile != null) {
+      imageUrl = await ApiService().uploadImage(_imageFile!);
+    }
+
+    final Map<String, dynamic> updateData = {
       "name": _nameController.text,
       "regular_price": _regularPriceController.text,
       "sale_price": _salePriceController.text,
@@ -49,16 +67,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       "stock_quantity": int.tryParse(_stockController.text) ?? 0,
       "stock_status": _stockStatus,
       "description": _descriptionController.text,
-    });
+    };
+
+    if (imageUrl != null) {
+      updateData["images"] = [{"src": imageUrl}];
+    }
+
+    final result = await ApiService().updateProduct(widget.product.id, updateData);
 
     setState(() => _isLoading = false);
     if (!mounted) return;
 
-    if (success) {
-      FeedbackService.show(context, "Website updated instantly! Changes are now live.");
+    if (result['success']) {
+      FeedbackService.show(context, result['message']);
       Navigator.pop(context, true);
     } else {
-      FeedbackService.show(context, "Connection failed. Please check your internet.", isError: true);
+      FeedbackService.show(context, result['message'], isError: true);
     }
   }
 
@@ -145,20 +169,34 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    height: 220,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 25, offset: const Offset(0, 10))],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(30),
-                      child: CachedNetworkImage(
-                        imageUrl: widget.product.imageUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(color: Colors.white),
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Container(
+                      height: 220,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 25, offset: const Offset(0, 10))],
                       ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: _imageFile != null
+                            ? Image.file(_imageFile!, fit: BoxFit.cover)
+                            : CachedNetworkImage(
+                                imageUrl: "${widget.product.imageUrl}?t=${DateTime.now().millisecondsSinceEpoch}",
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(color: Colors.white),
+                                errorWidget: (context, url, error) => const Center(child: Icon(Icons.add_a_photo_rounded, size: 40, color: Color(0xFF073334))),
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Center(
+                    child: Text(
+                      "TAP TO CHANGE PHOTO", 
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)
                     ),
                   ),
                   const SizedBox(height: 32),
